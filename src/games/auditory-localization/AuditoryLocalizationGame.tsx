@@ -16,6 +16,14 @@ interface Props extends GameProps {
   successThresholdDeg?: number;
 }
 
+// ---------- shared style snippets ----------
+
+const btnPrimary =
+  "px-7 py-3 bg-primary text-white rounded-[10px] text-base font-bold mt-2 transition-[background-color,transform] duration-150 hover:bg-primary-hover active:scale-[0.97]";
+
+const overlay =
+  "absolute inset-0 bg-[rgba(6,8,15,0.94)] flex flex-col items-center justify-center text-center p-10 gap-3.5";
+
 // ---------- sub-components ----------
 
 function HUD({
@@ -40,16 +48,20 @@ function HUD({
   else if (finished) status = "จบการทดสอบ";
 
   return (
-    <div className="al-hud">
-      <div className="al-hud-item">
-        <span className="al-hud-label">รอบ</span>
-        <span className="al-hud-value">
+    <div className="flex gap-3 flex-wrap">
+      <div className="bg-bg-1 border border-border rounded-[10px] px-4 py-[10px] min-w-[130px] flex flex-col gap-0.5">
+        <span className="text-[11px] text-text-2 uppercase tracking-wide">
+          รอบ
+        </span>
+        <span className="text-base font-bold font-mono">
           {Math.min(trialIdx + (running ? 1 : 0), totalTrials)} / {totalTrials}
         </span>
       </div>
-      <div className="al-hud-item">
-        <span className="al-hud-label">สถานะ</span>
-        <span className="al-hud-value">{status}</span>
+      <div className="bg-bg-1 border border-border rounded-[10px] px-4 py-[10px] min-w-[130px] flex flex-col gap-0.5">
+        <span className="text-[11px] text-text-2 uppercase tracking-wide">
+          สถานะ
+        </span>
+        <span className="text-base font-bold font-mono">{status}</span>
       </div>
     </div>
   );
@@ -65,16 +77,16 @@ function StartOverlay({
   onStart: () => void;
 }) {
   return (
-    <div className="al-overlay">
-      <h2>Auditory Localization & Reaction</h2>
-      <p>
+    <div className={overlay}>
+      <h2 className="text-[28px]">Auditory Localization & Reaction</h2>
+      <p className="max-w-[560px] text-text-1 leading-[1.6]">
         สวมหูฟังเพื่อประสบการณ์ที่ดีที่สุด ฟังเสียง footstep / reload
         แล้วใช้เมาส์คลิกไปทิศทางที่ได้ยิน
       </p>
-      <p className="al-hint">
+      <p className="text-text-2 text-[13px]">
         จำนวนรอบ: {trials} | เกณฑ์สำเร็จ: ภายใน {successThresholdDeg}°
       </p>
-      <button className="al-btn" onClick={onStart}>
+      <button className={btnPrimary} onClick={onStart}>
         เริ่มทดสอบ
       </button>
     </div>
@@ -91,9 +103,13 @@ function ResultCard({
   small?: boolean;
 }) {
   return (
-    <div>
-      <div className="al-result-label">{label}</div>
-      <div className={`al-result-value${small ? " al-small" : ""}`}>
+    <div className="bg-bg-2 border border-border rounded-[10px] p-[14px] text-center">
+      <div className="text-xs text-text-2 uppercase tracking-wide mb-1.5">
+        {label}
+      </div>
+      <div
+        className={`${small ? "text-base" : "text-[22px]"} font-extrabold font-mono text-accent`}
+      >
         {value}
       </div>
     </div>
@@ -109,9 +125,9 @@ function ResultOverlay({
 }) {
   const raw = result.rawData as AuditoryRawData;
   return (
-    <div className="al-overlay">
-      <h2>ผลการทดสอบ</h2>
-      <div className="al-result-grid">
+    <div className={overlay}>
+      <h2 className="text-[28px]">ผลการทดสอบ</h2>
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(160px,1fr))] gap-[14px] my-5 w-[min(560px,100%)]">
         <ResultCard label="Score" value={result.score.toFixed(1)} />
         <ResultCard
           label="Avg Angle Error"
@@ -131,7 +147,7 @@ function ResultOverlay({
           value={`${raw.successRateNear.toFixed(0)}% / ${raw.successRateMid.toFixed(0)}% / ${raw.successRateFar.toFixed(0)}%`}
         />
       </div>
-      <button className="al-btn" onClick={onRestart}>
+      <button className={btnPrimary} onClick={onRestart}>
         ทดสอบอีกครั้ง
       </button>
     </div>
@@ -151,7 +167,7 @@ function Markers({
   return (
     <>
       <div
-        className="al-marker al-marker-true"
+        className="absolute w-9 h-9 rounded-full flex items-center justify-center text-[10px] font-bold -translate-x-1/2 -translate-y-1/2 pointer-events-none animate-marker-in bg-success shadow-glow-success text-[#04220c]"
         style={{
           left: `calc(50% + ${truePt.x}px)`,
           top: `calc(50% + ${truePt.y}px)`,
@@ -160,7 +176,7 @@ function Markers({
         <span>เสียง</span>
       </div>
       <div
-        className="al-marker al-marker-click"
+        className="absolute w-9 h-9 rounded-full flex items-center justify-center text-[10px] font-bold -translate-x-1/2 -translate-y-1/2 pointer-events-none animate-marker-in bg-warn shadow-glow-warn text-[#2c2a04]"
         style={{
           left: `calc(50% + ${clickPt.x}px)`,
           top: `calc(50% + ${clickPt.y}px)`,
@@ -168,7 +184,9 @@ function Markers({
       >
         <span>คลิก</span>
       </div>
-      <div className="al-error-badge">Error: {reveal.error.toFixed(1)}°</div>
+      <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-primary/95 text-white px-[18px] py-2 rounded-full font-bold font-mono text-sm shadow-elevated">
+        Error: {reveal.error.toFixed(1)}°
+      </div>
     </>
   );
 }
@@ -192,7 +210,7 @@ export default function AuditoryLocalizationGame({
   });
 
   return (
-    <div className="al-wrapper">
+    <div className="flex flex-col gap-3">
       <HUD
         trialIdx={game.trialIdx}
         totalTrials={trials}
@@ -204,13 +222,15 @@ export default function AuditoryLocalizationGame({
 
       <div
         ref={arenaRef}
-        className={`al-arena ${game.waitingForClick ? "al-cursor-crosshair" : ""}`}
+        className={`relative w-full h-[60vh] min-h-[420px] sm:h-[70vh] sm:min-h-[500px] bg-arena-al border border-border rounded-xl overflow-hidden ${
+          game.waitingForClick ? "cursor-crosshair" : "cursor-default"
+        }`}
         onClick={game.handleClick}
       >
         {game.running && (
-          <div className="al-center">
-            <div className="al-center-dot" />
-            <div className="al-center-ring" />
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none">
+            <div className="w-[14px] h-[14px] rounded-full bg-accent shadow-[0_0_18px_rgba(139,233,253,0.7)]" />
+            <div className="absolute top-1/2 left-1/2 w-[30vmin] h-[30vmin] rounded-full border border-dashed border-accent/20 -translate-x-1/2 -translate-y-1/2" />
           </div>
         )}
 
