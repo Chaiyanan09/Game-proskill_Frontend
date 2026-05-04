@@ -20,27 +20,6 @@
 
 ---
 
-## 📁 โครงสร้างโปรเจค
-
-```
-Game Proskill/
-├── app/
-│   ├── layout.tsx              # Root layout + nav
-│   ├── page.tsx                # Home page
-│   ├── globals.css             # Global CSS ทั้งหมด
-│   ├── peripheral/page.tsx     # หน้าเกม 1
-│   └── auditory/page.tsx       # หน้าเกม 2
-├── components/
-│   ├── PeripheralAwarenessTest.tsx
-│   └── AuditoryLocalizationTest.tsx
-├── package.json
-├── tsconfig.json
-├── next.config.js
-└── README.md
-```
-
----
-
 ## 🚀 เริ่มต้นใน VS Code (Step-by-step)
 
 ### 1. ติดตั้งสิ่งที่ต้องใช้
