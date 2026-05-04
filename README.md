@@ -1,6 +1,6 @@
 # E-Sport Skill Tester 🎮
 
-ชุดเกมเล็กๆ สำหรับทดสอบทักษะนักกีฬา E-sport เขียนด้วย **Next.js + TypeScript** และจัดสไตล์ด้วย **Global CSS** พร้อม deploy ขึ้น **Vercel**
+ชุดเกมเล็กๆ สำหรับทดสอบทักษะนักกีฬา E-sport เขียนด้วย **Next.js + TypeScript** และจัดสไตล์ด้วย **Tailwind CSS** พร้อม deploy ขึ้น **Vercel**
 
 โปรเจคนี้ทำเฉพาะ **Frontend** (ยังไม่มี Backend) แต่ละเกมแยกเป็น React Component ในโฟลเดอร์ `components/` เพื่อให้นำไปรวมกับเกมของคนอื่นได้ง่าย
 
