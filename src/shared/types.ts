@@ -3,14 +3,27 @@
  * --------------------
  * สัญญาเชื่อมต่อระหว่าง "เกมโมดูลของนิสิต" กับ "เว็บหลักของอาจารย์"
  *
- * กฎ:
- *  1. เกมห้ามเชื่อมต่อ database โดยตรง
- *  2. เกมต้องรับ props ตาม GameProps
- *  3. เมื่อจบเกม ต้องเรียก onGameComplete(result) โดย result เป็นรูปแบบ GameResult
- *  4. ใช้ performance.now() สำหรับการวัดเวลาที่ต้องการความละเอียดสูง
+ * กฎหลัก:
+ * 1. เกมห้ามเชื่อมต่อ database โดยตรง
+ * 2. เกมต้องรับ props ตาม GameProps
+ * 3. เมื่อจบเกม ต้องเรียก onGameComplete(result) โดย result เป็นรูปแบบ GameResult
+ * 4. ใช้ performance.now() สำหรับการวัดเวลาที่ต้องการความละเอียดสูง
  */
 
+export const GAME_RESULT_SCHEMA_VERSION = "1.0.0" as const;
+
+export type GameResultSchemaVersion = typeof GAME_RESULT_SCHEMA_VERSION;
+
+export type GameStatus = "completed" | "aborted" | "failed";
+
+export type GameConfig = Record<string, unknown>;
+
+export type GameRawData = Record<string, unknown>;
+
 export interface GameResult {
+  /** version ของ contract เพื่อกันปัญหา format เปลี่ยนในอนาคต */
+  schemaVersion: GameResultSchemaVersion;
+
   /** รหัสเกม (kebab-case) เช่น "peripheral-awareness" */
   gameId: string;
 
@@ -23,7 +36,10 @@ export interface GameResult {
   /** รหัสเซสชันการทดสอบ - ระบบหลักส่งมาให้ */
   sessionId: string;
 
-  /** คะแนนรวม (สเกลที่แต่ละเกมกำหนด แนะนำ 0-100) */
+  /** สถานะการจบเกม ใช้แยก completed / aborted / failed */
+  status: GameStatus;
+
+  /** คะแนนรวม (แนะนำ 0-100) */
   score: number;
 
   /** ความแม่นยำเป็น % (ถ้ามี) */
@@ -44,11 +60,11 @@ export interface GameResult {
   /** ระยะเวลาที่เล่นทั้งหมด (ms) — ใช้ performance.now() ภายในเกม */
   durationMs: number;
 
-  /**
-   * ข้อมูลดิบเฉพาะของเกมแต่ละตัว
-   * ระบบหลักจะเก็บลง column raw_data_json เพื่อใช้วิเคราะห์ภายหลัง
-   */
-  rawData: unknown;
+  /** config ที่ใช้ในการทดสอบรอบนั้น เช่น duration, trials, threshold */
+  config?: GameConfig;
+
+  /** ข้อมูลดิบเฉพาะของเกมแต่ละตัว เก็บลง raw_data_json ได้ */
+  rawData: GameRawData;
 }
 
 export interface GameProps {

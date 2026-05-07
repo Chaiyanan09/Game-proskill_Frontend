@@ -6,11 +6,17 @@ import {
   useState,
   MouseEvent as ReactMouseEvent,
 } from "react";
-import { GameResult } from "@/shared/types";
+
+import {
+  GAME_RESULT_SCHEMA_VERSION,
+  GameResult,
+  GameStatus,
+} from "@/shared/types";
+
 import {
   CORNERS,
-  CornerCue,
   Corner,
+  CornerCue,
   CueSymbol,
   FeedbackType,
   KEY_TO_SYMBOL,
@@ -18,21 +24,35 @@ import {
   Point,
 } from "./types";
 
-/**
- * Logic ของเกม Peripheral Awareness
- *  - Pure helpers (calc target position, distance, summarize ...)
- *  - buildResult() แปลง state ภายในเกม -> GameResult ตาม contract
- *  - usePeripheralGame() — hook ที่ห่อ logic ทั้งหมด ให้ ComponentName.tsx เรียกใช้
- */
-
 export const GAME_ID = "peripheral-awareness";
 export const GAME_NAME = "Peripheral Awareness Test";
 
-// ============================================================
-// Pure Helpers
-// ============================================================
+export interface PeripheralGameConfig extends Record<string, unknown> {
+  durationSec: number;
+  cueLifeMs: number;
+  cueIntervalMs: [number, number];
+}
 
-/** คำนวณตำแหน่งเป้าหมายแบบ Lissajous (วงโคจรซ้อน) ทำให้ track ยาก */
+export interface ResultMeta {
+  playerId: string;
+  sessionId: string;
+  status: GameStatus;
+  startedAtIso: string;
+  endedAtIso: string;
+  durationMs: number;
+  config: PeripheralGameConfig;
+}
+
+export interface UsePeripheralOptions extends PeripheralGameConfig {
+  playerId: string;
+  sessionId: string;
+  onGameComplete: (result: GameResult) => void;
+}
+
+const FEEDBACK_DURATION_MS = 200;
+const FIRST_CUE_DELAY_MS = 800;
+const TICK_MS = 100;
+
 export function calcTargetPosition(
   width: number,
   height: number,
@@ -40,16 +60,18 @@ export function calcTargetPosition(
 ): Point {
   const cx = width / 2;
   const cy = height / 2;
-  const radius = Math.min(width, height) * 0.08;
-  const x =
-    cx +
-    Math.cos(elapsedSec * 1.4) * radius +
-    Math.sin(elapsedSec * 0.7) * radius * 0.4;
-  const y =
-    cy +
-    Math.sin(elapsedSec * 1.1) * radius +
-    Math.cos(elapsedSec * 0.5) * radius * 0.4;
-  return { x, y };
+  const radius = Math.min(width, height) * 0.085;
+
+  return {
+    x:
+      cx +
+      Math.cos(elapsedSec * 1.45) * radius +
+      Math.sin(elapsedSec * 0.72) * radius * 0.42,
+    y:
+      cy +
+      Math.sin(elapsedSec * 1.12) * radius +
+      Math.cos(elapsedSec * 0.52) * radius * 0.42,
+  };
 }
 
 export function distance(a: Point, b: Point): number {
@@ -72,106 +94,94 @@ export function randomDelay(min: number, max: number): number {
 
 function average(values: number[]): number {
   if (values.length === 0) return 0;
-  return values.reduce((s, v) => s + v, 0) / values.length;
-}
-
-// ============================================================
-// Result building (ตาม Game Module Contract)
-// ============================================================
-
-export interface ResultMeta {
-  playerId: string;
-  sessionId: string;
-  startedAtIso: string;
-  endedAtIso: string;
-  durationMs: number;
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
 }
 
 export function buildResult(
   meta: ResultMeta,
   cues: CornerCue[],
-  trackingSamples: number[]
+  trackingSamples: number[],
+  falsePressCount: number
 ): GameResult {
   const total = cues.length;
-  const responded = cues.filter((c) => c.responseMs !== undefined);
-  const correct = cues.filter((c) => c.correct === true);
-  const wrong = responded.filter((c) => c.correct === false);
-  const missed = cues.filter((c) => c.responseMs === undefined);
-  const avgRt = average(responded.map((c) => c.responseMs ?? 0));
+  const responded = cues.filter((cue) => cue.responseMs !== undefined);
+  const correct = cues.filter((cue) => cue.correct === true);
+  const wrong = responded.filter((cue) => cue.correct === false);
+  const missed = cues.filter((cue) => cue.responseMs === undefined);
+  const avgRt = average(responded.map((cue) => cue.responseMs ?? 0));
   const avgDev = average(trackingSamples);
   const accuracy = total > 0 ? (correct.length / total) * 100 : 0;
 
-  // คะแนน 0-100 ผสม accuracy (น้ำหนัก 70%) + tracking score (30%)
+  // คะแนน 0-100: accuracy 70% + tracking 30% และหักจากการกดมั่วเล็กน้อย
   const trackingScore = Math.max(0, 100 - avgDev);
-  const score = accuracy * 0.7 + trackingScore * 0.3;
+  const falsePressPenalty = Math.min(15, falsePressCount * 1.5);
+  const score = Math.max(
+    0,
+    Math.min(100, accuracy * 0.7 + trackingScore * 0.3 - falsePressPenalty)
+  );
 
   const rawData: PeripheralRawData = {
     totalCues: total,
     correctCount: correct.length,
     missedCount: missed.length,
     wrongCount: wrong.length,
+    falsePressCount,
     avgTrackingDeviationPx: avgDev,
-    cues: cues.map((c) => ({
-      corner: c.corner,
-      symbol: c.symbol,
-      correct: c.correct ?? null,
-      responseMs: c.responseMs ?? null,
-      trackingDevAtSpawn: c.trackingDevAtSpawn ?? null,
+    cues: cues.map((cue) => ({
+      corner: cue.corner,
+      symbol: cue.symbol,
+      correct: cue.correct ?? null,
+      responseMs: cue.responseMs ?? null,
+      trackingDevAtSpawn: cue.trackingDevAtSpawn ?? null,
     })),
   };
 
   return {
+    schemaVersion: GAME_RESULT_SCHEMA_VERSION,
     gameId: GAME_ID,
     gameName: GAME_NAME,
     playerId: meta.playerId,
     sessionId: meta.sessionId,
+    status: meta.status,
     score,
     accuracy,
     reactionTimeMs: avgRt,
-    responseTimesMs: responded.map((c) => c.responseMs ?? 0),
+    responseTimesMs: responded.map((cue) => cue.responseMs ?? 0),
     startedAt: meta.startedAtIso,
     endedAt: meta.endedAtIso,
     durationMs: meta.durationMs,
+    config: meta.config,
     rawData,
   };
 }
 
-// ============================================================
-// Game Hook
-// ============================================================
-
-export interface UsePeripheralOptions {
-  durationSec: number;
-  cueLifeMs: number;
-  cueIntervalMs: [number, number];
-  playerId: string;
-  sessionId: string;
-  onGameComplete: (r: GameResult) => void;
-}
-
-const FEEDBACK_DURATION_MS = 200;
-const FIRST_CUE_DELAY_MS = 800;
-const TICK_MS = 100;
-
 export function usePeripheralGame(
   arenaRef: RefObject<HTMLDivElement>,
-  opts: UsePeripheralOptions
+  options: UsePeripheralOptions
 ) {
-  const { durationSec, cueLifeMs, playerId, sessionId, onGameComplete } = opts;
-  const [minIntervalMs, maxIntervalMs] = opts.cueIntervalMs;
+  const {
+    durationSec,
+    cueLifeMs,
+    cueIntervalMs,
+    playerId,
+    sessionId,
+    onGameComplete,
+  } = options;
+  const [minIntervalMs, maxIntervalMs] = cueIntervalMs;
 
-  // refs ที่อัปเดตบ่อย ไม่ trigger render
   const targetPosRef = useRef<Point>({ x: 0, y: 0 });
   const mousePosRef = useRef<Point>({ x: 0, y: 0 });
   const trackingSamplesRef = useRef<number[]>([]);
   const cuesRef = useRef<CornerCue[]>([]);
   const cueIdRef = useRef(0);
+  const falsePressCountRef = useRef(0);
   const animationRef = useRef<number | null>(null);
   const cueTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const feedbackTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const startTimeRef = useRef(0);
   const startTimeIsoRef = useRef("");
+  const finalizedRef = useRef(false);
 
-  // state ที่ต้อง render
   const [running, setRunning] = useState(false);
   const [finished, setFinished] = useState(false);
   const [activeCues, setActiveCues] = useState<CornerCue[]>([]);
@@ -179,47 +189,75 @@ export function usePeripheralGame(
   const [timeLeft, setTimeLeft] = useState(durationSec);
   const [lastResult, setLastResult] = useState<GameResult | null>(null);
   const [feedback, setFeedback] = useState<FeedbackType>("");
+  const [falsePressCount, setFalsePressCount] = useState(0);
 
-  const flashFeedback = (type: "correct" | "wrong") => {
+  const clearTimers = useCallback(() => {
+    if (animationRef.current !== null) {
+      cancelAnimationFrame(animationRef.current);
+      animationRef.current = null;
+    }
+    if (cueTimeoutRef.current) {
+      clearTimeout(cueTimeoutRef.current);
+      cueTimeoutRef.current = null;
+    }
+    if (feedbackTimeoutRef.current) {
+      clearTimeout(feedbackTimeoutRef.current);
+      feedbackTimeoutRef.current = null;
+    }
+  }, []);
+
+  const flashFeedback = useCallback((type: "correct" | "wrong") => {
+    if (feedbackTimeoutRef.current) clearTimeout(feedbackTimeoutRef.current);
     setFeedback(type);
-    setTimeout(() => setFeedback(""), FEEDBACK_DURATION_MS);
-  };
+    feedbackTimeoutRef.current = setTimeout(() => {
+      setFeedback("");
+      feedbackTimeoutRef.current = null;
+    }, FEEDBACK_DURATION_MS);
+  }, []);
 
   const updateTarget = useCallback(() => {
     if (!arenaRef.current) return;
+
     const rect = arenaRef.current.getBoundingClientRect();
-    const t = (performance.now() - startTimeRef.current) / 1000;
-    const pos = calcTargetPosition(rect.width, rect.height, t);
+    const elapsedSec = (performance.now() - startTimeRef.current) / 1000;
+    const pos = calcTargetPosition(rect.width, rect.height, elapsedSec);
+
     targetPosRef.current = pos;
     setTargetPos(pos);
   }, [arenaRef]);
 
   const expireCues = (now: number): boolean => {
     let needRender = false;
-    cuesRef.current.forEach((c) => {
-      if (!c.resolved && now >= c.expiresAt) {
-        c.resolved = true;
-        c.correct = false;
+
+    cuesRef.current.forEach((cue) => {
+      if (!cue.resolved && now >= cue.expiresAt) {
+        cue.resolved = true;
+        cue.correct = false;
         needRender = true;
       }
     });
+
     return needRender;
   };
 
   const loop = useCallback(() => {
     updateTarget();
+
     if (running) {
       const dist = distance(mousePosRef.current, targetPosRef.current);
       trackingSamplesRef.current.push(dist);
     }
+
     if (expireCues(performance.now())) {
-      setActiveCues(cuesRef.current.filter((c) => !c.resolved));
+      setActiveCues(cuesRef.current.filter((cue) => !cue.resolved));
     }
+
     animationRef.current = requestAnimationFrame(loop);
   }, [running, updateTarget]);
 
   const spawnCue = useCallback(() => {
     if (!running) return;
+
     const now = performance.now();
     const cue: CornerCue = {
       id: cueIdRef.current++,
@@ -230,8 +268,9 @@ export function usePeripheralGame(
       resolved: false,
       trackingDevAtSpawn: distance(mousePosRef.current, targetPosRef.current),
     };
+
     cuesRef.current.push(cue);
-    setActiveCues(cuesRef.current.filter((c) => !c.resolved));
+    setActiveCues(cuesRef.current.filter((activeCue) => !activeCue.resolved));
 
     cueTimeoutRef.current = setTimeout(
       spawnCue,
@@ -240,93 +279,137 @@ export function usePeripheralGame(
   }, [running, cueLifeMs, minIntervalMs, maxIntervalMs]);
 
   const handleKey = useCallback(
-    (e: KeyboardEvent) => {
+    (event: KeyboardEvent) => {
       if (!running) return;
-      const sym = KEY_TO_SYMBOL[e.key];
+
+      const sym = KEY_TO_SYMBOL[event.key];
       if (!sym) return;
-      const active = cuesRef.current.filter((c) => !c.resolved);
+
+      event.preventDefault();
+      const active = cuesRef.current.filter((cue) => !cue.resolved);
+
       if (active.length === 0) {
+        falsePressCountRef.current += 1;
+        setFalsePressCount(falsePressCountRef.current);
         flashFeedback("wrong");
         return;
       }
+
       const cue = active[active.length - 1];
       cue.resolved = true;
       cue.responseMs = performance.now() - cue.spawnedAt;
       cue.correct = cue.symbol === sym;
+
       flashFeedback(cue.correct ? "correct" : "wrong");
-      setActiveCues(cuesRef.current.filter((c) => !c.resolved));
+      setActiveCues(cuesRef.current.filter((activeCue) => !activeCue.resolved));
     },
-    [running]
+    [running, flashFeedback]
   );
 
-  const handleMouseMove = (e: ReactMouseEvent<HTMLDivElement>) => {
+  const handleMouseMove = (event: ReactMouseEvent<HTMLDivElement>) => {
     if (!arenaRef.current) return;
+
     const rect = arenaRef.current.getBoundingClientRect();
     mousePosRef.current = {
-      x: e.clientX - rect.left,
-      y: e.clientY - rect.top,
+      x: event.clientX - rect.left,
+      y: event.clientY - rect.top,
     };
   };
 
-  const finalize = useCallback(() => {
-    setRunning(false);
-    setFinished(true);
-    if (animationRef.current) cancelAnimationFrame(animationRef.current);
-    if (cueTimeoutRef.current) clearTimeout(cueTimeoutRef.current);
+  const finalize = useCallback(
+    (status: GameStatus = "completed") => {
+      if (finalizedRef.current) return;
 
-    const endTime = performance.now();
-    const endIso = new Date().toISOString();
-    const result = buildResult(
-      {
-        playerId,
-        sessionId,
-        startedAtIso: startTimeIsoRef.current,
-        endedAtIso: endIso,
-        durationMs: endTime - startTimeRef.current,
-      },
-      cuesRef.current,
-      trackingSamplesRef.current
-    );
-    setLastResult(result);
-    onGameComplete(result);
-  }, [playerId, sessionId, onGameComplete]);
+      finalizedRef.current = true;
+      setRunning(false);
+      setFinished(true);
+      clearTimers();
 
-  const start = () => {
+      const endTime = performance.now();
+      const endIso = new Date().toISOString();
+      const result = buildResult(
+        {
+          playerId,
+          sessionId,
+          status,
+          startedAtIso: startTimeIsoRef.current,
+          endedAtIso: endIso,
+          durationMs: endTime - startTimeRef.current,
+          config: { durationSec, cueLifeMs, cueIntervalMs: [minIntervalMs, maxIntervalMs] },
+        },
+        cuesRef.current,
+        trackingSamplesRef.current,
+        falsePressCountRef.current
+      );
+
+      setLastResult(result);
+      onGameComplete(result);
+    },
+    [
+      clearTimers,
+      cueLifeMs,
+      durationSec,
+      maxIntervalMs,
+      minIntervalMs,
+      onGameComplete,
+      playerId,
+      sessionId,
+    ]
+  );
+
+  const start = useCallback(() => {
+    clearTimers();
+    finalizedRef.current = false;
     cuesRef.current = [];
     cueIdRef.current = 0;
+    falsePressCountRef.current = 0;
     trackingSamplesRef.current = [];
+
     setActiveCues([]);
+    setFalsePressCount(0);
     setLastResult(null);
     setFinished(false);
     setTimeLeft(durationSec);
+    setFeedback("");
+
     startTimeRef.current = performance.now();
     startTimeIsoRef.current = new Date().toISOString();
     setRunning(true);
-  };
+  }, [clearTimers, durationSec]);
 
   useEffect(() => {
-    if (!running) return;
+    if (!running) return undefined;
+
     animationRef.current = requestAnimationFrame(loop);
     cueTimeoutRef.current = setTimeout(spawnCue, FIRST_CUE_DELAY_MS);
     window.addEventListener("keydown", handleKey);
 
     const timerId = setInterval(() => {
-      const elapsed = (performance.now() - startTimeRef.current) / 1000;
-      const left = Math.max(0, durationSec - elapsed);
+      const elapsedSec = (performance.now() - startTimeRef.current) / 1000;
+      const left = Math.max(0, durationSec - elapsedSec);
       setTimeLeft(left);
+
       if (left <= 0) {
         clearInterval(timerId);
-        finalize();
+        finalize("completed");
       }
     }, TICK_MS);
 
     return () => {
-      if (animationRef.current) cancelAnimationFrame(animationRef.current);
-      if (cueTimeoutRef.current) clearTimeout(cueTimeoutRef.current);
+      if (animationRef.current !== null) {
+        cancelAnimationFrame(animationRef.current);
+        animationRef.current = null;
+      }
+      if (cueTimeoutRef.current) {
+        clearTimeout(cueTimeoutRef.current);
+        cueTimeoutRef.current = null;
+      }
       clearInterval(timerId);
       window.removeEventListener("keydown", handleKey);
     };
-  }, [running, loop, spawnCue, handleKey, durationSec, finalize]);
+  }, [durationSec, finalize, handleKey, loop, running, spawnCue]);
+
+  useEffect(() => clearTimers, [clearTimers]);
 
   return {
     running,
@@ -335,6 +418,7 @@ export function usePeripheralGame(
     targetPos,
     timeLeft,
     feedback,
+    falsePressCount,
     lastResult,
     cues: cuesRef.current,
     start,
