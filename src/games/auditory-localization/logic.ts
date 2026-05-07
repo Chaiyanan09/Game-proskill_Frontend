@@ -1,401 +1,405 @@
 import {
   RefObject,
+  MouseEvent as ReactMouseEvent,
   useCallback,
   useEffect,
   useRef,
   useState,
-  MouseEvent as ReactMouseEvent,
 } from "react";
-import { GameResult } from "@/shared/types";
-import {
-  AuditoryRawData,
-  Point,
-  RevealInfo,
-  SoundType,
-  Trial,
-} from "./types";
 
-/**
- * Logic ของเกม Auditory Localization & Reaction
- *  - สร้างเสียง footstep / reload จาก noise + sine ผ่าน Web Audio API
- *  - เล่นเสียงผ่าน PannerNode (HRTF) เพื่อให้รู้สึกถึงตำแหน่ง 3D จริง
- *  - Pure helpers (angleErrorDeg, summarize ...)
- *  - buildResult() แปลง state ภายในเกม -> GameResult ตาม contract
- *  - useAuditoryGame() — hook ที่ห่อ logic ทั้งหมด
- */
+import {
+  GAME_RESULT_SCHEMA_VERSION,
+  GameResult,
+  GameStatus,
+} from "@/shared/types";
+
+import {
+  AudioBundle,
+  ensureAudioReady,
+  playSpatialSound,
+} from "./audio";
+import { AuditoryRawData, Point, RevealInfo, SoundType, Trial } from "./types";
 
 export const GAME_ID = "auditory-localization";
 export const GAME_NAME = "Auditory Localization & Reaction";
 
-// ============================================================
-// Audio buffer creation
-// ============================================================
-
-/** สร้างเสียงฝีเท้า: noise burst + low thump */
-export function createFootstepBuffer(ctx: AudioContext): AudioBuffer {
-  const sampleRate = ctx.sampleRate;
-  const duration = 0.18;
-  const length = Math.floor(sampleRate * duration);
-  const buf = ctx.createBuffer(1, length, sampleRate);
-  const data = buf.getChannelData(0);
-  for (let i = 0; i < length; i++) {
-    const t = i / sampleRate;
-    const env = Math.exp(-t * 25);
-    const noise = (Math.random() * 2 - 1) * env;
-    const thump = Math.sin(2 * Math.PI * 80 * t) * Math.exp(-t * 30) * 0.5;
-    data[i] = (noise * 0.6 + thump) * 0.8;
-  }
-  return buf;
+export interface AuditoryGameConfig extends Record<string, unknown> {
+  trials: number;
+  successThresholdDeg: number;
+  responseTimeoutMs: number;
 }
-
-/** สร้างเสียง reload: 3 click ติดกัน metallic */
-export function createReloadBuffer(ctx: AudioContext): AudioBuffer {
-  const sampleRate = ctx.sampleRate;
-  const duration = 0.4;
-  const length = Math.floor(sampleRate * duration);
-  const buf = ctx.createBuffer(1, length, sampleRate);
-  const data = buf.getChannelData(0);
-
-  const clicks: Array<{ start: number; freq: number; gain: number }> = [
-    { start: 0.0, freq: 1200, gain: 0.6 },
-    { start: 0.18, freq: 1800, gain: 0.5 },
-    { start: 0.3, freq: 1500, gain: 0.4 },
-  ];
-
-  for (let i = 0; i < length; i++) {
-    const t = i / sampleRate;
-    let v = 0;
-    for (const c of clicks) {
-      const tt = t - c.start;
-      if (tt < 0 || tt > 0.07) continue;
-      const env = Math.exp(-tt * 70);
-      v += (Math.random() * 2 - 1) * env * c.gain;
-      v += Math.sin(2 * Math.PI * c.freq * tt) * env * (c.gain * 0.5);
-    }
-    data[i] = v * 0.8;
-  }
-  return buf;
-}
-
-export interface AudioBundle {
-  ctx: AudioContext;
-  footstep: AudioBuffer;
-  reload: AudioBuffer;
-}
-
-export async function ensureAudioBundle(
-  current: AudioBundle | null
-): Promise<AudioBundle> {
-  if (current) {
-    if (current.ctx.state === "suspended") await current.ctx.resume();
-    return current;
-  }
-  const Ctx =
-    window.AudioContext ||
-    (window as unknown as { webkitAudioContext: typeof AudioContext })
-      .webkitAudioContext;
-  const ctx = new Ctx();
-  return {
-    ctx,
-    footstep: createFootstepBuffer(ctx),
-    reload: createReloadBuffer(ctx),
-  };
-}
-
-/** เล่นเสียง 3D ในตำแหน่ง angleDeg + distance (0-1) */
-export function playSpatialSound(
-  bundle: AudioBundle,
-  angleDeg: number,
-  distance: number,
-  type: SoundType
-): void {
-  const { ctx } = bundle;
-  const buffer = type === "footstep" ? bundle.footstep : bundle.reload;
-  const src = ctx.createBufferSource();
-  src.buffer = buffer;
-
-  const panner = ctx.createPanner();
-  panner.panningModel = "HRTF";
-  panner.distanceModel = "inverse";
-  panner.refDistance = 1;
-  panner.maxDistance = 10;
-  panner.rolloffFactor = 1;
-
-  const r = 1 + distance * 5;
-  const rad = (angleDeg * Math.PI) / 180;
-  panner.positionX.value = Math.cos(rad) * r;
-  panner.positionY.value = 0;
-  panner.positionZ.value = Math.sin(rad) * r;
-
-  const gain = ctx.createGain();
-  gain.gain.value = 1 - distance * 0.6;
-
-  src.connect(panner).connect(gain).connect(ctx.destination);
-  src.start();
-}
-
-// ============================================================
-// Pure Helpers
-// ============================================================
-
-export function angleToPoint(angleDeg: number, radius: number): Point {
-  const rad = (angleDeg * Math.PI) / 180;
-  return { x: Math.cos(rad) * radius, y: Math.sin(rad) * radius };
-}
-
-export function pointToAngleDeg(p: Point): number {
-  let angle = (Math.atan2(p.y, p.x) * 180) / Math.PI;
-  if (angle < 0) angle += 360;
-  return angle;
-}
-
-export function angleErrorDeg(
-  trueAngle: number,
-  guessAngle: number
-): number {
-  let diff = Math.abs(guessAngle - trueAngle) % 360;
-  if (diff > 180) diff = 360 - diff;
-  return diff;
-}
-
-export function makeRandomTrial(index: number): Trial {
-  return {
-    index,
-    angleDeg: Math.random() * 360,
-    distance: Math.random(),
-    soundType: Math.random() < 0.5 ? "footstep" : "reload",
-    playedAt: 0,
-  };
-}
-
-export function randomPreDelayMs(): number {
-  return 600 + Math.random() * 900;
-}
-
-function bucket(t: Trial): "near" | "mid" | "far" {
-  if (t.distance < 0.34) return "near";
-  if (t.distance < 0.67) return "mid";
-  return "far";
-}
-
-function successRatePct(trials: Trial[]): number {
-  if (trials.length === 0) return 0;
-  return (trials.filter((t) => t.success).length / trials.length) * 100;
-}
-
-function average(values: number[]): number {
-  if (values.length === 0) return 0;
-  return values.reduce((s, v) => s + v, 0) / values.length;
-}
-
-// ============================================================
-// Result building (ตาม Game Module Contract)
-// ============================================================
 
 export interface ResultMeta {
   playerId: string;
   sessionId: string;
+  status: GameStatus;
   startedAtIso: string;
   endedAtIso: string;
   durationMs: number;
+  config: AuditoryGameConfig;
 }
 
-export function buildResult(meta: ResultMeta, trials: Trial[]): GameResult {
-  const completed = trials.filter((t) => t.angleErrorDeg !== undefined);
-  const total = completed.length;
-  const avgErr = average(completed.map((t) => t.angleErrorDeg ?? 0));
-  const avgRt = average(completed.map((t) => t.reactionMs ?? 0));
-  const succ = completed.filter((t) => t.success).length;
-  const overall = successRatePct(completed);
-  const near = completed.filter((t) => bucket(t) === "near");
-  const mid = completed.filter((t) => bucket(t) === "mid");
-  const far = completed.filter((t) => bucket(t) === "far");
+export interface UseAuditoryOptions extends AuditoryGameConfig {
+  playerId: string;
+  sessionId: string;
+  onGameComplete: (result: GameResult) => void;
+}
 
-  // คะแนน 0-100 ผสม success rate (70%) + accuracy score (30%)
-  const accuracyScore = Math.max(0, 100 - avgErr * 1.1);
-  const score = overall * 0.7 + accuracyScore * 0.3;
+const PRE_DELAY_MIN_MS = 700;
+const PRE_DELAY_MAX_MS = 1450;
+const REVEAL_DURATION_MS = 1000;
+
+function average(values: number[]): number {
+  if (values.length === 0) return 0;
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+function percent(part: number, total: number): number {
+  return total > 0 ? (part / total) * 100 : 0;
+}
+
+function randomRange(min: number, max: number): number {
+  return min + Math.random() * (max - min);
+}
+
+function randomAngle(): number {
+  return Math.floor(Math.random() * 360);
+}
+
+function randomSoundType(): SoundType {
+  return Math.random() > 0.5 ? "footstep" : "reload";
+}
+
+export function angularDistanceDeg(a: number, b: number): number {
+  const diff = Math.abs((((a - b) % 360) + 540) % 360 - 180);
+  return diff;
+}
+
+export function pointToAngleDeg(point: Point, center: Point): number {
+  const radians = Math.atan2(point.y - center.y, point.x - center.x);
+  return (((radians * 180) / Math.PI) + 360) % 360;
+}
+
+export function calculateClickAngle(point: Point, center: Point): number {
+  const radians = Math.atan2(point.y - center.y, point.x - center.x);
+  return ((radians * 180) / Math.PI + 360) % 360;
+}
+
+function successRateByDistance(trials: Trial[], min: number, max: number): number {
+  const bucket = trials.filter((trial) => trial.distance >= min && trial.distance < max);
+  const success = bucket.filter((trial) => trial.success === true);
+  return percent(success.length, bucket.length);
+}
+
+export function buildResult(
+  meta: ResultMeta,
+  trials: Trial[]
+): GameResult {
+  const responded = trials.filter((trial) => trial.reactionMs !== undefined);
+  const success = trials.filter((trial) => trial.success === true);
+  const missed = trials.filter((trial) => trial.timedOut === true);
+  const wrong = trials.filter(
+    (trial) => trial.success === false && trial.timedOut !== true
+  );
+  const angleErrors = trials
+    .map((trial) => trial.angleErrorDeg)
+    .filter((value): value is number => value !== undefined);
+  const avgError = average(angleErrors);
+  const avgRt = average(responded.map((trial) => trial.reactionMs ?? 0));
+  const accuracy = percent(success.length, trials.length);
+
+  // คะแนน 0-100: สำเร็จตาม threshold 70% + ความคลาดเคลื่อนมุม 30%
+  const angleScore = Math.max(0, 100 - avgError);
+  const timeoutPenalty = Math.min(20, missed.length * 4);
+  const score = Math.max(
+    0,
+    Math.min(100, accuracy * 0.7 + angleScore * 0.3 - timeoutPenalty)
+  );
 
   const rawData: AuditoryRawData = {
-    totalTrials: total,
-    successCount: succ,
-    avgAngleErrorDeg: avgErr,
-    successRateNear: successRatePct(near),
-    successRateMid: successRatePct(mid),
-    successRateFar: successRatePct(far),
-    trials: completed.map((t) => ({
-      angleDeg: t.angleDeg,
-      clickAngleDeg: t.clickAngleDeg ?? null,
-      angleErrorDeg: t.angleErrorDeg ?? null,
-      reactionMs: t.reactionMs ?? null,
-      distance: t.distance,
-      soundType: t.soundType,
-      success: t.success ?? null,
+    totalTrials: trials.length,
+    successCount: success.length,
+    missedCount: missed.length,
+    wrongCount: wrong.length,
+    avgAngleErrorDeg: avgError,
+    successRateNear: successRateByDistance(trials, 0, 0.34),
+    successRateMid: successRateByDistance(trials, 0.34, 0.67),
+    successRateFar: successRateByDistance(trials, 0.67, 1.01),
+    trials: trials.map((trial) => ({
+      index: trial.index,
+      angleDeg: trial.angleDeg,
+      clickAngleDeg: trial.clickAngleDeg ?? null,
+      angleErrorDeg: trial.angleErrorDeg ?? null,
+      reactionMs: trial.reactionMs ?? null,
+      distance: trial.distance,
+      soundType: trial.soundType,
+      success: trial.success ?? null,
+      timedOut: trial.timedOut === true,
     })),
   };
 
   return {
+    schemaVersion: GAME_RESULT_SCHEMA_VERSION,
     gameId: GAME_ID,
     gameName: GAME_NAME,
     playerId: meta.playerId,
     sessionId: meta.sessionId,
+    status: meta.status,
     score,
-    accuracy: overall,
+    accuracy,
     reactionTimeMs: avgRt,
-    responseTimesMs: completed.map((t) => t.reactionMs ?? 0),
+    responseTimesMs: responded.map((trial) => trial.reactionMs ?? 0),
     startedAt: meta.startedAtIso,
     endedAt: meta.endedAtIso,
     durationMs: meta.durationMs,
+    config: meta.config,
     rawData,
   };
 }
 
-// ============================================================
-// Game Hook
-// ============================================================
-
-export interface UseAuditoryOptions {
-  trials: number;
-  successThresholdDeg: number;
-  playerId: string;
-  sessionId: string;
-  onGameComplete: (r: GameResult) => void;
-}
-
 export function useAuditoryGame(
   arenaRef: RefObject<HTMLDivElement>,
-  opts: UseAuditoryOptions
+  options: UseAuditoryOptions
 ) {
   const {
     trials,
     successThresholdDeg,
+    responseTimeoutMs,
     playerId,
     sessionId,
     onGameComplete,
-  } = opts;
+  } = options;
 
   const audioBundleRef = useRef<AudioBundle | null>(null);
   const trialsRef = useRef<Trial[]>([]);
   const currentTrialRef = useRef<Trial | null>(null);
+  const preDelayTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const revealTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const responseTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const startTimeRef = useRef(0);
   const startTimeIsoRef = useRef("");
+  const finalizedRef = useRef(false);
 
   const [running, setRunning] = useState(false);
   const [finished, setFinished] = useState(false);
+  const [waitingForClick, setWaitingForClick] = useState(false);
   const [trialIdx, setTrialIdx] = useState(0);
   const [showReveal, setShowReveal] = useState<RevealInfo | null>(null);
   const [lastResult, setLastResult] = useState<GameResult | null>(null);
-  const [waitingForClick, setWaitingForClick] = useState(false);
+  const [message, setMessage] = useState("กดเริ่มเพื่อเปิดระบบเสียง 3D");
+  const [audioReady, setAudioReady] = useState(false);
 
-  const finalize = useCallback(() => {
-    setRunning(false);
-    setFinished(true);
-    setWaitingForClick(false);
-    const endTime = performance.now();
-    const endIso = new Date().toISOString();
-    const result = buildResult(
-      {
-        playerId,
-        sessionId,
-        startedAtIso: startTimeIsoRef.current,
-        endedAtIso: endIso,
-        durationMs: endTime - startTimeRef.current,
-      },
-      trialsRef.current
-    );
-    setLastResult(result);
-    onGameComplete(result);
-  }, [playerId, sessionId, onGameComplete]);
-
-  const startTrial = useCallback((idx: number) => {
-    const trial = makeRandomTrial(idx);
-    setWaitingForClick(false);
-    setShowReveal(null);
-
-    setTimeout(() => {
-      trial.playedAt = performance.now();
-      currentTrialRef.current = trial;
-      trialsRef.current.push(trial);
-      if (audioBundleRef.current) {
-        playSpatialSound(
-          audioBundleRef.current,
-          trial.angleDeg,
-          trial.distance,
-          trial.soundType
-        );
-      }
-      setWaitingForClick(true);
-    }, randomPreDelayMs());
+  const clearTrialTimers = useCallback(() => {
+    if (preDelayTimeoutRef.current) {
+      clearTimeout(preDelayTimeoutRef.current);
+      preDelayTimeoutRef.current = null;
+    }
+    if (revealTimeoutRef.current) {
+      clearTimeout(revealTimeoutRef.current);
+      revealTimeoutRef.current = null;
+    }
+    if (responseTimeoutRef.current) {
+      clearTimeout(responseTimeoutRef.current);
+      responseTimeoutRef.current = null;
+    }
   }, []);
 
-  const handleClick = (e: ReactMouseEvent<HTMLDivElement>) => {
-    if (!waitingForClick || !arenaRef.current) return;
-    const trial = currentTrialRef.current;
-    if (!trial) return;
+  const prepareAudio = useCallback(async () => {
+    audioBundleRef.current = await ensureAudioReady(audioBundleRef.current);
+    setAudioReady(true);
+    return audioBundleRef.current;
+  }, []);
 
-    const rect = arenaRef.current.getBoundingClientRect();
-    const cx = rect.width / 2;
-    const cy = rect.height / 2;
-    const clickAngle = pointToAngleDeg({
-      x: e.clientX - rect.left - cx,
-      y: e.clientY - rect.top - cy,
-    });
-    let trueAngle = trial.angleDeg;
-    if (trueAngle < 0) trueAngle += 360;
-    const errorDeg = angleErrorDeg(trueAngle, clickAngle);
+  const finalize = useCallback(
+    (status: GameStatus = "completed") => {
+      if (finalizedRef.current) return;
 
-    trial.clickedAt = performance.now();
-    trial.clickAngleDeg = clickAngle;
-    trial.angleErrorDeg = errorDeg;
-    trial.reactionMs = trial.clickedAt - trial.playedAt;
-    trial.success = errorDeg <= successThresholdDeg;
+      finalizedRef.current = true;
+      clearTrialTimers();
+      setRunning(false);
+      setWaitingForClick(false);
+      setFinished(true);
+      setMessage("ทดสอบเสร็จแล้ว");
 
-    setShowReveal({ trueAngle, clickAngle, error: errorDeg });
-    setWaitingForClick(false);
+      const endTime = performance.now();
+      const result = buildResult(
+        {
+          playerId,
+          sessionId,
+          status,
+          startedAtIso: startTimeIsoRef.current,
+          endedAtIso: new Date().toISOString(),
+          durationMs: endTime - startTimeRef.current,
+          config: { trials, successThresholdDeg, responseTimeoutMs },
+        },
+        trialsRef.current
+      );
 
-    setTimeout(() => {
-      const nextIdx = trial.index + 1;
-      if (nextIdx >= trials) {
-        finalize();
-      } else {
-        setTrialIdx(nextIdx);
-        startTrial(nextIdx);
+      setLastResult(result);
+      onGameComplete(result);
+    },
+    [
+      clearTrialTimers,
+      onGameComplete,
+      playerId,
+      responseTimeoutMs,
+      sessionId,
+      successThresholdDeg,
+      trials,
+    ]
+  );
+
+  const scheduleNextTrial = useCallback(
+    (nextIndex: number) => {
+      clearTrialTimers();
+
+      if (nextIndex >= trials) {
+        finalize("completed");
+        return;
       }
-    }, 1300);
-  };
 
-  const start = async () => {
-    audioBundleRef.current = await ensureAudioBundle(audioBundleRef.current);
-    trialsRef.current = [];
-    currentTrialRef.current = null;
-    setLastResult(null);
-    setFinished(false);
-    setShowReveal(null);
-    setTrialIdx(0);
-    startTimeRef.current = performance.now();
-    startTimeIsoRef.current = new Date().toISOString();
-    setRunning(true);
-    startTrial(0);
-  };
+      setTrialIdx(nextIndex);
+      setWaitingForClick(false);
+      setShowReveal(null);
+      setMessage("เตรียมฟังเสียง...");
+
+      preDelayTimeoutRef.current = setTimeout(async () => {
+        const bundle = await prepareAudio();
+        const trial: Trial = {
+          index: nextIndex,
+          angleDeg: randomAngle(),
+          distance: randomRange(0.08, 0.95),
+          soundType: randomSoundType(),
+          playedAt: performance.now(),
+        };
+
+        currentTrialRef.current = trial;
+        trialsRef.current.push(trial);
+        playSpatialSound(bundle, trial.angleDeg, trial.distance, trial.soundType);
+        setWaitingForClick(true);
+        setMessage("คลิกตำแหน่งที่คุณได้ยินเสียง");
+
+        responseTimeoutRef.current = setTimeout(() => {
+          if (currentTrialRef.current !== trial || trial.reactionMs !== undefined) {
+            return;
+          }
+
+          trial.clickedAt = performance.now();
+          trial.success = false;
+          trial.timedOut = true;
+          setWaitingForClick(false);
+          setShowReveal({
+            trueAngle: trial.angleDeg,
+            clickAngle: null,
+            error: null,
+            success: false,
+            timedOut: true,
+          });
+          setMessage("หมดเวลาในรอบนี้");
+
+          revealTimeoutRef.current = setTimeout(() => {
+            scheduleNextTrial(nextIndex + 1);
+          }, REVEAL_DURATION_MS);
+        }, responseTimeoutMs);
+      }, randomRange(PRE_DELAY_MIN_MS, PRE_DELAY_MAX_MS));
+    },
+    [clearTrialTimers, finalize, prepareAudio, responseTimeoutMs, trials]
+  );
+
+  const start = useCallback(() => {
+    void (async () => {
+      clearTrialTimers();
+      finalizedRef.current = false;
+      trialsRef.current = [];
+      currentTrialRef.current = null;
+      setFinished(false);
+      setLastResult(null);
+      setShowReveal(null);
+      setTrialIdx(0);
+      setRunning(true);
+      setWaitingForClick(false);
+      setMessage("กำลังเปิดระบบเสียง...");
+
+      await prepareAudio();
+      startTimeRef.current = performance.now();
+      startTimeIsoRef.current = new Date().toISOString();
+      scheduleNextTrial(0);
+    })();
+  }, [clearTrialTimers, prepareAudio, scheduleNextTrial]);
+
+  const testSound = useCallback(
+    (side: "left" | "right") => {
+      void (async () => {
+        const bundle = await prepareAudio();
+        playSpatialSound(bundle, side === "left" ? 180 : 0, 0.25, "footstep");
+      })();
+    },
+    [prepareAudio]
+  );
+
+  const handleArenaClick = useCallback(
+    (event: ReactMouseEvent<HTMLDivElement>) => {
+      if (!waitingForClick || !arenaRef.current || !currentTrialRef.current) return;
+
+      const trial = currentTrialRef.current;
+      const rect = arenaRef.current.getBoundingClientRect();
+      const clickPoint: Point = {
+        x: event.clientX - rect.left,
+        y: event.clientY - rect.top,
+      };
+      const center: Point = { x: rect.width / 2, y: rect.height / 2 };
+      const clickAngle = calculateClickAngle(clickPoint, center);
+      const error = angularDistanceDeg(trial.angleDeg, clickAngle);
+      const now = performance.now();
+
+      if (responseTimeoutRef.current) {
+        clearTimeout(responseTimeoutRef.current);
+        responseTimeoutRef.current = null;
+      }
+
+      trial.clickedAt = now;
+      trial.clickAngleDeg = clickAngle;
+      trial.angleErrorDeg = error;
+      trial.reactionMs = now - trial.playedAt;
+      trial.success = error <= successThresholdDeg;
+      trial.timedOut = false;
+
+      setWaitingForClick(false);
+      setShowReveal({
+        trueAngle: trial.angleDeg,
+        clickAngle,
+        error,
+        success: trial.success,
+        timedOut: false,
+      });
+      setMessage(trial.success ? "แม่นมาก!" : "ทิศทางยังคลาดเคลื่อน");
+
+      revealTimeoutRef.current = setTimeout(() => {
+        scheduleNextTrial(trial.index + 1);
+      }, REVEAL_DURATION_MS);
+    },
+    [arenaRef, scheduleNextTrial, successThresholdDeg, waitingForClick]
+  );
 
   useEffect(() => {
-    if (running) {
-      document.body.style.userSelect = "none";
-    } else {
-      document.body.style.userSelect = "";
-    }
     return () => {
-      document.body.style.userSelect = "";
+      clearTrialTimers();
+      void audioBundleRef.current?.context.close();
     };
-  }, [running]);
+  }, [clearTrialTimers]);
 
   return {
     running,
     finished,
+    waitingForClick,
     trialIdx,
+    trialCount: trials,
     showReveal,
     lastResult,
-    waitingForClick,
+    message,
+    audioReady,
     start,
-    handleClick,
+    testSound,
+    handleArenaClick,
   };
 }

@@ -1,217 +1,108 @@
 # E-Sport Skill Tester 🎮
 
-ชุดเกมเล็กๆ สำหรับทดสอบทักษะนักกีฬา E-sport เขียนด้วย **Next.js + TypeScript** และจัดสไตล์ด้วย **Global CSS** พร้อม deploy ขึ้น **Vercel**
+โปรเจกต์นี้เป็น **Frontend Game Module** สำหรับทดสอบทักษะผู้เล่นเกม / นักกีฬา E-Sport  
+พัฒนาด้วย **React + TypeScript + Vite**
 
-โปรเจคนี้ทำเฉพาะ **Frontend** (ยังไม่มี Backend) แต่ละเกมแยกเป็น React Component ในโฟลเดอร์ `components/` เพื่อให้นำไปรวมกับเกมของคนอื่นได้ง่าย
-
-## 🎯 เกมที่มีอยู่
-
-### 1. Peripheral Awareness Test (`/peripheral`)
-ทดสอบการประมวลผลข้อมูลรอบนอก
-- ใช้เมาส์ประคองเป้าหมายตรงกลางจอ
-- กดเลข 1-4 บนคีย์บอร์ดให้ตรงกับสัญลักษณ์ที่โผล่ตามมุมจอ
-- วัดผล: **Peripheral Accuracy (%)**, **Tracking Deviation (px)**, **Detection Speed (ms)**
-
-### 2. Auditory Localization & Reaction (`/auditory`)
-ทดสอบการระบุทิศทางจากเสียง (FPS / Tactical Shooter)
-- ฟังเสียง footstep / reload ผ่านระบบเสียง 3D (HRTF)
-- คลิกเมาส์ไปทิศทางที่ได้ยิน
-- วัดผล: **Angle Error (°)**, **Audio Reaction Time (ms)**, **Success Rate by Distance**
+โปรเจกต์นี้ **ไม่มี Backend และไม่เชื่อมต่อ Database โดยตรง**  
+แต่ละเกมจะส่งผลลัพธ์กลับออกมาผ่าน `onGameComplete(result)` เพื่อให้ระบบหลักนำไปบันทึกลง Database ต่อ
 
 ---
 
-## 📁 โครงสร้างโปรเจค
+## เกมที่มีในโปรเจกต์
 
-```
-Game Proskill/
-├── app/
-│   ├── layout.tsx              # Root layout + nav
-│   ├── page.tsx                # Home page
-│   ├── globals.css             # Global CSS ทั้งหมด
-│   ├── peripheral/page.tsx     # หน้าเกม 1
-│   └── auditory/page.tsx       # หน้าเกม 2
-├── components/
-│   ├── PeripheralAwarenessTest.tsx
-│   └── AuditoryLocalizationTest.tsx
-├── package.json
-├── tsconfig.json
-├── next.config.js
-└── README.md
-```
+### 1. Peripheral Awareness
 
----
+เกมทดสอบการมองเห็นรอบข้าง สมาธิ และความเร็วในการตอบสนอง
 
-## 🚀 เริ่มต้นใน VS Code (Step-by-step)
+**วิธีเล่น**
+- ผู้เล่นต้องโฟกัสเป้าหมายที่อยู่กลางจอ
+- ระหว่างเล่นจะมี cue / ตัวเลขโผล่ขึ้นตามตำแหน่งรอบจอ
+- ผู้เล่นต้องกดปุ่มตัวเลขให้ตรงกับ cue ที่ปรากฏ
 
-### 1. ติดตั้งสิ่งที่ต้องใช้
-
-ติดตั้งให้เรียบร้อยก่อน:
-
-- **Node.js** (เวอร์ชัน 18 ขึ้นไป) → https://nodejs.org/
-- **Git** → https://git-scm.com/downloads
-- **VS Code** → https://code.visualstudio.com/
-
-ตรวจเช็กว่าติดตั้งครบ เปิด terminal ขึ้นมาแล้วพิมพ์:
-```bash
-node -v
-npm -v
-git --version
-```
-
-### 2. เปิดโปรเจคใน VS Code
-
-```bash
-cd "D:\Proskill\Game Proskill"
-code .
-```
-
-หรือเปิด VS Code แล้ว File → Open Folder → เลือกโฟลเดอร์ `Game Proskill`
-
-### 3. ติดตั้ง dependencies
-
-เปิด terminal ใน VS Code (Ctrl + `` ` ``) แล้วรัน:
-
-```bash
-npm install
-```
-
-### 4. รัน dev server
-
-```bash
-npm run dev
-```
-
-เปิดเบราว์เซอร์ไปที่ **http://localhost:3000**
+**สิ่งที่วัดผล**
+- `Accuracy` — ความถูกต้องในการตอบ cue
+- `Reaction Time` — เวลาตั้งแต่ cue ปรากฏจนผู้เล่นกดตอบ
+- `Missed` — จำนวน cue ที่ไม่ได้ตอบภายในเวลาที่กำหนด
+- `Wrong` — จำนวนครั้งที่กดผิดตอนมี cue
+- `False Press` — จำนวนครั้งที่กดมั่วตอนยังไม่มี cue
+- `Tracking Deviation` — ค่าความคลาดเคลื่อนในการโฟกัส/ติดตามเป้าหมายกลางจอ
 
 ---
 
-## 📦 Push ขึ้น GitHub
+### 2. Auditory Localization & Reaction
 
-### 1. สร้าง repository บน GitHub
+เกมทดสอบการฟังทิศทางเสียง ความแม่นยำ และความเร็วในการตอบสนอง
 
-ไปที่ https://github.com/new
-- ตั้งชื่อ repo เช่น `esport-skill-tester`
-- เลือก Public หรือ Private ตามต้องการ
-- **อย่าติ๊ก** "Initialize this repository with a README" (เพราะเรามีอยู่แล้ว)
-- กด **Create repository**
+**วิธีเล่น**
+- ผู้เล่นควรใส่หูฟัง
+- ระบบจะสุ่มเล่นเสียง 3D จากทิศทางต่าง ๆ
+- ผู้เล่นต้องคลิกตำแหน่งที่คิดว่าเสียงมาจากทิศนั้น
 
-### 2. Init Git ในโปรเจคและ commit
-
-ใน terminal ของ VS Code:
-
-```bash
-git init
-git add .
-git commit -m "init: peripheral & auditory tests"
-git branch -M main
-```
-
-### 3. เชื่อมกับ GitHub remote (เปลี่ยน USERNAME ให้ตรงกับของคุณ)
-
-```bash
-git remote add origin https://github.com/USERNAME/esport-skill-tester.git
-git push -u origin main
-```
-
-ครั้งแรก git อาจขอ login ให้ใส่ username + Personal Access Token (สร้างที่ https://github.com/settings/tokens)
-
-### 4. ครั้งต่อไปเวลาแก้โค้ด
-
-```bash
-git add .
-git commit -m "feat: เพิ่มอะไรก็แล้วแต่"
-git push
-```
+**สิ่งที่วัดผล**
+- `Accuracy` — ความถูกต้องในการระบุทิศทางเสียง
+- `Angle Error` — ค่าความคลาดเคลื่อนระหว่างทิศเสียงจริงกับตำแหน่งที่ผู้เล่นคลิก
+- `Reaction Time` — เวลาตั้งแต่เสียงเริ่มเล่นจนผู้เล่นคลิกตอบ
+- `Wrong` — จำนวนครั้งที่คลิกแล้วผิดทิศทาง
+- `Timeout` — จำนวนครั้งที่ไม่ได้คลิกภายในเวลาที่กำหนด
 
 ---
 
-## 🌐 Deploy ขึ้น Vercel
+## รูปแบบการส่งผลลัพธ์
 
-### วิธีที่ 1: ผ่านเว็บ (แนะนำ)
+ทุกเกมจะรับ `playerId`, `sessionId` และ `onGameComplete()` จากระบบหลัก
 
-1. ไปที่ https://vercel.com/signup → sign in ด้วย GitHub
-2. คลิก **Add New... → Project**
-3. เลือก repo `esport-skill-tester` → กด **Import**
-4. Vercel จะตรวจเจอว่าเป็น Next.js โดยอัตโนมัติ → กด **Deploy**
-5. รอประมาณ 1-2 นาที จะได้ URL เช่น `https://esport-skill-tester.vercel.app`
+เมื่อเล่นจบ เกมจะส่งผลลัพธ์กลับในรูปแบบ `GameResult`
 
-ทุกครั้งที่ push code ขึ้น branch `main` Vercel จะ auto-deploy ให้เอง
+```ts
+export interface GameResult {
+  schemaVersion: "1.0.0";
+  gameId: string;
+  gameName: string;
 
-### วิธีที่ 2: ผ่าน CLI
+  playerId: string;
+  sessionId: string;
 
-```bash
-npm i -g vercel
-vercel login
-vercel
-```
+  status: "completed" | "aborted" | "failed";
 
----
+  score: number;
+  accuracy?: number;
+  reactionTimeMs?: number;
+  responseTimesMs?: number[];
 
-## 🧩 การนำ Component ไปใช้ในโปรเจคอื่น
+  startedAt: string;
+  endedAt: string;
+  durationMs: number;
 
-ทั้งสอง component ออกแบบมาให้ standalone — แค่ก็อปไฟล์ใน `components/` กับ class ที่เกี่ยวข้องใน `globals.css` ไปวางในโปรเจค Next.js / React โปรเจคอื่นได้เลย
-
-### ตัวอย่างการเรียกใช้
-
-```tsx
-import PeripheralAwarenessTest from "@/components/PeripheralAwarenessTest";
-
-export default function MyPage() {
-  return (
-    <PeripheralAwarenessTest
-      durationSec={60}
-      cueLifeMs={700}
-      cueIntervalMs={[900, 2100]}
-      onFinish={(result) => {
-        // ส่งผลไปยัง backend / state ของเกมรวม
-        console.log(result);
-        // {
-        //   totalCues: number,
-        //   correctCount: number,
-        //   missedCount: number,
-        //   wrongCount: number,
-        //   accuracyPct: number,
-        //   avgDetectionMs: number,
-        //   avgTrackingDeviationPx: number,
-        // }
-      }}
-    />
-  );
+  config?: Record<string, unknown>;
+  rawData: Record<string, unknown>;
 }
 ```
 
-```tsx
-import AuditoryLocalizationTest from "@/components/AuditoryLocalizationTest";
+แนวทางนี้ทำให้เกมสามารถนำไปเสียบกับระบบหลักได้ง่าย โดยระบบหลักเป็นฝ่ายรับผลลัพธ์ไปบันทึกลง Database เอง
 
-<AuditoryLocalizationTest
-  trials={10}
-  successThresholdDeg={25}
-  onFinish={(result) => {
-    // {
-    //   totalTrials, avgAngleErrorDeg, avgReactionMs,
-    //   successRateOverall, successRateNear, successRateMid, successRateFar
-    // }
-  }}
-/>
+---
+
+## เริ่มใช้งานโปรเจกต์
+
+```bash
+npm install
+npm run dev
+```
+
+ตรวจสอบ TypeScript:
+
+```bash
+npm run type-check
+```
+
+Build สำหรับใช้งานจริง:
+
+```bash
+npm run build
 ```
 
 ---
 
-## 🛠 Scripts
+## สรุป
 
-| คำสั่ง | ทำอะไร |
-|---|---|
-| `npm run dev` | เปิด dev server ที่ localhost:3000 |
-| `npm run build` | build production |
-| `npm start` | รัน production server (ต้อง build ก่อน) |
-| `npm run lint` | ตรวจ lint |
-
----
-
-## 📌 หมายเหตุ
-
-- เสียงในเกม Auditory ถูกสร้างผ่าน **Web Audio API** ไม่ต้องโหลดไฟล์เสียงเพิ่ม
-- ใช้ **PannerNode + HRTF** เพื่อให้รู้สึกถึงทิศทางจริง — แนะนำใส่หูฟังตอนเล่น
-- Component เป็น `"use client"` เพราะต้องใช้ DOM/Audio APIs
-
-Have fun! 🎮
+โปรเจกต์นี้ทำหน้าที่เป็นชุดเกมทดสอบทักษะผู้เล่น โดยแต่ละเกมถูกแยกเป็นโมดูลและส่งผลลัพธ์ออกมาเป็นรูปแบบมาตรฐาน เหมาะสำหรับนำไปเชื่อมกับระบบหลักที่มี Database และระบบจัดการผู้เล่นภายนอก

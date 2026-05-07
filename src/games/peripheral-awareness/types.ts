@@ -1,6 +1,4 @@
-/**
- * Internal types ของเกม Peripheral Awareness
- */
+/** Internal types ของเกม Peripheral Awareness */
 
 export type Corner = "TL" | "TR" | "BL" | "BR";
 export type CueSymbol = 1 | 2 | 3 | 4;
@@ -24,11 +22,12 @@ export interface CornerCue {
 }
 
 /** rawData ที่จะถูกส่งกลับใน GameResult.rawData */
-export interface PeripheralRawData {
+export interface PeripheralRawData extends Record<string, unknown> {
   totalCues: number;
   correctCount: number;
   missedCount: number;
   wrongCount: number;
+  falsePressCount: number;
   avgTrackingDeviationPx: number;
   cues: Array<{
     corner: Corner;
