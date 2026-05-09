@@ -16,11 +16,19 @@ interface Props extends GameProps {
 }
 
 const btnPrimary =
-  "rounded-2xl bg-primary px-7 py-3 text-base font-extrabold text-white shadow-glow-primary transition duration-200 hover:-translate-y-0.5 hover:bg-primary-hover active:translate-y-0";
+  "rounded-2xl bg-primary px-7 py-3 text-base font-extrabold uppercase tracking-[0.18em] text-white shadow-glow-primary transition duration-200 hover:-translate-y-0.5 hover:bg-primary-hover active:translate-y-0";
 const btnGhost =
-  "rounded-2xl border border-border bg-bg-1/80 px-5 py-3 text-sm font-bold text-text-1 transition hover:-translate-y-0.5 hover:border-primary/70 hover:text-text-0";
+  "rounded-2xl border border-border bg-bg-1/80 px-5 py-3 text-sm font-bold uppercase tracking-[0.16em] text-text-1 transition hover:-translate-y-0.5 hover:border-primary/70 hover:text-text-0";
 const overlay =
   "absolute inset-0 z-30 flex flex-col items-center justify-center gap-5 bg-bg-0/86 p-8 text-center backdrop-blur-md";
+
+function gradeFromScore(score: number): { letter: string; color: string; ring: string } {
+  if (score >= 90) return { letter: "S", color: "text-warn", ring: "border-warn/60 shadow-glow-warn" };
+  if (score >= 80) return { letter: "A", color: "text-success", ring: "border-success/60 shadow-glow-success" };
+  if (score >= 65) return { letter: "B", color: "text-accent", ring: "border-accent/60 shadow-glow-accent" };
+  if (score >= 50) return { letter: "C", color: "text-primary", ring: "border-primary/60 shadow-glow-primary" };
+  return { letter: "D", color: "text-danger", ring: "border-danger/60 shadow-[0_0_18px_rgba(255,85,85,0.6)]" };
+}
 
 function StatPill({
   label,
@@ -60,10 +68,17 @@ function HUD({
 
   return (
     <div className="space-y-3">
-      <div className="flex flex-wrap gap-3">
-        <StatPill label="รอบ" value={`${displayRound}/${trialCount}`} />
-        <StatPill label="สถานะ" value={waitingForClick ? "CLICK" : "LISTEN"} tone={waitingForClick ? "good" : "normal"} />
-        <StatPill label="Audio" value={audioReady ? "READY" : "LOCKED"} tone={audioReady ? "good" : "warn"} />
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.28em] text-primary">
+          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-primary" />
+          MODULE PS-02
+        </div>
+        <div className="inline-flex items-center gap-2 rounded-full border border-accent/30 bg-accent/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.28em] text-accent">
+          🎧 USE HEADPHONES
+        </div>
+        <StatPill label="ROUND" value={`${displayRound}/${trialCount}`} />
+        <StatPill label="STATE" value={waitingForClick ? "CLICK" : "LISTEN"} tone={waitingForClick ? "good" : "normal"} />
+        <StatPill label="AUDIO" value={audioReady ? "READY" : "LOCKED"} tone={audioReady ? "good" : "warn"} />
       </div>
       <div className="h-3 overflow-hidden rounded-full border border-border bg-bg-1 shadow-[inset_0_0_16px_rgba(0,0,0,0.45)]">
         <div
@@ -95,6 +110,22 @@ function DirectionLine({
         </span>
       )}
     </div>
+  );
+}
+
+function CompassMark({ label, angle }: { label: string; angle: number }) {
+  // 0=ขวา (E), 90=ล่าง (S), 180=ซ้าย (W), 270=บน (N)
+  const radians = (angle * Math.PI) / 180;
+  const r = 47; // % from center
+  const x = 50 + Math.cos(radians) * r;
+  const y = 50 + Math.sin(radians) * r;
+  return (
+    <span
+      className="absolute -translate-x-1/2 -translate-y-1/2 rounded-full border border-accent/30 bg-bg-0/70 px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.18em] text-accent backdrop-blur"
+      style={{ left: `${x}%`, top: `${y}%` }}
+    >
+      {label}
+    </span>
   );
 }
 
@@ -131,6 +162,16 @@ function Radar({
       ? "CLICK DIRECTION"
       : "LISTEN";
 
+  const statusTone = reveal
+    ? reveal.timedOut
+      ? "border-danger/40 bg-danger/10 text-danger"
+      : reveal.success
+        ? "border-success/40 bg-success/10 text-success"
+        : "border-warn/40 bg-warn/10 text-warn"
+    : waitingForClick
+      ? "border-primary/40 bg-primary/10 text-primary"
+      : "border-accent/30 bg-accent/10 text-accent";
+
   return (
     <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
       <div className="relative aspect-square w-[min(75vh,84vw)] rounded-full border border-accent/25 bg-bg-0/25 shadow-[inset_0_0_90px_rgba(91,141,239,0.14)]">
@@ -143,6 +184,11 @@ function Radar({
         <div className="absolute left-0 top-1/2 h-px w-full -translate-y-1/2 bg-accent/12" />
         <div className="absolute left-1/2 top-1/2 h-6 w-6 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-accent bg-accent/20 shadow-glow-accent" />
         <div className="absolute left-1/2 top-1/2 h-16 w-16 -translate-x-1/2 -translate-y-1/2 rounded-full border border-accent/15 target-orbit" />
+
+        <CompassMark label="N" angle={270} />
+        <CompassMark label="E" angle={0} />
+        <CompassMark label="S" angle={90} />
+        <CompassMark label="W" angle={180} />
 
         {waitingForClick && (
           <div className="absolute inset-[32%] animate-pulse rounded-full border-2 border-primary/50 shadow-glow-primary" />
@@ -158,8 +204,8 @@ function Radar({
         )}
 
         <div className="absolute inset-x-8 top-10 text-center">
-          <div className="mx-auto inline-flex rounded-full border border-primary/30 bg-primary/10 px-4 py-1 text-xs font-black uppercase tracking-[0.22em] text-primary">
-            {statusText}
+          <div className={`mx-auto inline-flex rounded-full border px-4 py-1 text-xs font-black uppercase tracking-[0.22em] ${statusTone}`}>
+            ● {statusText}
           </div>
         </div>
 
@@ -181,13 +227,13 @@ function CountdownOverlay({ value }: { value: number }) {
   return (
     <div className={overlay}>
       <div className="rounded-full border border-primary/30 bg-primary/10 px-4 py-1 text-xs font-black uppercase tracking-[0.24em] text-primary">
-        เตรียมฟังเสียง
+        🎧 เตรียมฟังเสียง 3D
       </div>
       <div key={value} className="countdown-pop font-mono text-[clamp(84px,14vw,180px)] font-black text-accent drop-shadow-[0_0_35px_rgba(139,233,253,0.55)]">
         {value}
       </div>
-      <p className="text-sm font-bold uppercase tracking-[0.26em] text-text-2">
-        wear headphones • locate sound direction
+      <p className="text-sm font-black uppercase tracking-[0.26em] text-text-2">
+        WEAR HEADPHONES • LOCATE SOUND DIRECTION
       </p>
     </div>
   );
@@ -212,52 +258,64 @@ function StartOverlay({
     <div className={overlay}>
       <div className="float-soft absolute left-[12%] top-[18%] h-28 w-28 rounded-full bg-primary/15 blur-3xl" />
       <div className="float-soft absolute bottom-[16%] right-[14%] h-32 w-32 rounded-full bg-accent/15 blur-3xl [animation-delay:1.2s]" />
-      <div className="rounded-full border border-primary/30 bg-primary/10 px-4 py-1 text-xs font-black uppercase tracking-[0.24em] text-primary">
-        Test 02 • 3D Audio Reaction
+
+      <div className="flex flex-wrap items-center justify-center gap-2">
+        <div className="rounded-full border border-primary/30 bg-primary/10 px-4 py-1 text-xs font-black uppercase tracking-[0.24em] text-primary">
+          MODULE PS-02 • 3D AUDIO REACTION
+        </div>
+        <div className="rounded-full border border-accent/30 bg-accent/10 px-4 py-1 text-xs font-black uppercase tracking-[0.24em] text-accent">
+          🎧 HEADPHONES REQUIRED
+        </div>
       </div>
-      <h2 className="max-w-[820px] bg-title-gradient bg-clip-text text-[clamp(34px,5vw,64px)] font-black leading-tight text-transparent">
-        Auditory Localization & Reaction
+
+      <h2 className="max-w-[820px] bg-title-gradient bg-clip-text text-[clamp(34px,5vw,64px)] font-black uppercase leading-tight tracking-tight text-transparent">
+        Auditory Localization
       </h2>
       <p className="max-w-[720px] text-base leading-7 text-text-1">
-        ใส่หูฟัง ฟังเสียง 3D แล้วคลิกทิศทางที่ได้ยินให้ไวที่สุด ระบบจะเฉลยเส้นสีเขียว
-        เป็นทิศจริง และเส้นสีแดงเป็นตำแหน่งที่คลิก
+        ใส่หูฟัง ฟังเสียง 3D แล้วคลิกทิศทางที่ได้ยินให้ไวที่สุด ระบบจะเฉลย
+        <span className="text-success"> เส้นเขียว = ทิศจริง </span>
+        และ<span className="text-danger"> เส้นแดง = ตำแหน่งที่คลิก</span>
       </p>
+
       <div className="grid w-[min(800px,100%)] grid-cols-1 gap-3 text-left text-sm text-text-1 sm:grid-cols-3">
-        <div className="pro-card rounded-2xl bg-bg-1/80 p-4">
-          <b className="text-text-0">Trials</b>
-          <p className="mt-1">ทั้งหมด {trials} รอบ</p>
+        <div className="pro-card rounded-2xl border border-border bg-bg-1/80 p-4">
+          <div className="text-[10px] font-black uppercase tracking-[0.24em] text-text-2">TRIALS</div>
+          <div className="mt-1 font-mono text-2xl font-black text-accent">{trials}</div>
+          <p className="mt-1 text-xs text-text-2">รอบทดสอบทั้งหมด</p>
         </div>
-        <div className="pro-card rounded-2xl bg-bg-1/80 p-4">
-          <b className="text-text-0">Success</b>
-          <p className="mt-1">คลาดเคลื่อนไม่เกิน {threshold}°</p>
+        <div className="pro-card rounded-2xl border border-border bg-bg-1/80 p-4">
+          <div className="text-[10px] font-black uppercase tracking-[0.24em] text-text-2">SUCCESS</div>
+          <div className="mt-1 font-mono text-2xl font-black text-success">≤ {threshold}°</div>
+          <p className="mt-1 text-xs text-text-2">คลาดเคลื่อนสูงสุดที่ผ่าน</p>
         </div>
-        <div className="pro-card rounded-2xl bg-bg-1/80 p-4">
-          <b className="text-text-0">Timeout</b>
-          <p className="mt-1">{(responseTimeoutMs / 1000).toFixed(1)} วินาที/รอบ</p>
+        <div className="pro-card rounded-2xl border border-border bg-bg-1/80 p-4">
+          <div className="text-[10px] font-black uppercase tracking-[0.24em] text-text-2">TIMEOUT</div>
+          <div className="mt-1 font-mono text-2xl font-black text-warn">{(responseTimeoutMs / 1000).toFixed(1)}s</div>
+          <p className="mt-1 text-xs text-text-2">เวลาตัดสินใจต่อรอบ</p>
         </div>
       </div>
       <div className="flex flex-wrap justify-center gap-3">
         <button className={btnGhost} onClick={onTestLeft}>
-          ← ทดสอบเสียงซ้าย
+          ← TEST LEFT
         </button>
         <button className={btnGhost} onClick={onTestRight}>
-          ทดสอบเสียงขวา →
+          TEST RIGHT →
         </button>
       </div>
       <button className={btnPrimary} onClick={onStart}>
-        เริ่มทดสอบ →
+        ENGAGE TEST →
       </button>
     </div>
   );
 }
 
-function ResultCard({ label, value }: { label: string; value: string }) {
+function ResultCard({ label, value, tone }: { label: string; value: string; tone?: string }) {
   return (
     <div className="metric-rise rounded-2xl border border-border bg-bg-2/85 p-4 text-center shadow-elevated">
       <div className="mb-1 text-[11px] font-black uppercase tracking-[0.18em] text-text-2">
         {label}
       </div>
-      <div className="font-mono text-2xl font-black text-accent">{value}</div>
+      <div className={`font-mono text-2xl font-black ${tone ?? "text-accent"}`}>{value}</div>
     </div>
   );
 }
@@ -270,27 +328,47 @@ function ResultOverlay({
   onRestart: () => void;
 }) {
   const raw = result.rawData as AuditoryRawData;
+  const grade = gradeFromScore(result.score);
 
   return (
     <div className={`${overlay} result-enter`}>
       <div className="rounded-full border border-success/30 bg-success/10 px-4 py-1 text-xs font-black uppercase tracking-[0.24em] text-success">
-        completed • schema {result.schemaVersion}
+        ● MATCH COMPLETE • Schema {result.schemaVersion}
       </div>
-      <h2 className="text-[clamp(32px,4vw,54px)] font-black">ผลการทดสอบเสียง</h2>
+
+      <div className="flex flex-wrap items-center justify-center gap-6">
+        <div className={`relative flex h-28 w-28 items-center justify-center rounded-2xl border-2 ${grade.ring} bg-bg-0/70`}>
+          <div className={`font-mono text-7xl font-black ${grade.color}`}>{grade.letter}</div>
+          <div className="absolute -top-2 left-1/2 -translate-x-1/2 rounded-full border border-border bg-bg-0 px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.22em] text-text-2">
+            GRADE
+          </div>
+        </div>
+        <div className="text-left">
+          <div className="text-[10px] font-black uppercase tracking-[0.24em] text-text-2">SCORE</div>
+          <div className="font-mono text-7xl font-black text-accent drop-shadow-[0_0_24px_rgba(139,233,253,0.55)]">
+            {result.score.toFixed(1)}
+          </div>
+          <div className="text-[10px] font-mono text-text-2">/100</div>
+        </div>
+      </div>
+
+      <h2 className="text-[clamp(28px,3.5vw,44px)] font-black uppercase tracking-tight">
+        ผลการทดสอบเสียง
+      </h2>
       <div className="grid w-[min(960px,100%)] grid-cols-2 gap-3 md:grid-cols-6">
-        <ResultCard label="Score" value={result.score.toFixed(1)} />
-        <ResultCard label="Accuracy" value={`${(result.accuracy ?? 0).toFixed(1)}%`} />
-        <ResultCard label="Wrong" value={`${raw.wrongCount}`} />
-        <ResultCard label="Timeout" value={`${raw.missedCount}`} />
+        <ResultCard label="Accuracy" value={`${(result.accuracy ?? 0).toFixed(1)}%`} tone="text-success" />
+        <ResultCard label="Wrong" value={`${raw.wrongCount}`} tone="text-warn" />
+        <ResultCard label="Timeout" value={`${raw.missedCount}`} tone="text-danger" />
         <ResultCard label="Avg Error" value={`${raw.avgAngleErrorDeg.toFixed(1)}°`} />
-        <ResultCard label="Reaction" value={`${(result.reactionTimeMs ?? 0).toFixed(0)}ms`} />
+        <ResultCard label="Reaction" value={`${(result.reactionTimeMs ?? 0).toFixed(0)}ms`} tone="text-primary" />
+        <ResultCard label="Trials" value={`${raw.totalTrials}`} />
       </div>
       <p className="max-w-[760px] text-sm leading-6 text-text-2">
-        เส้นสีเขียวคือทิศเสียงจริง เส้นสีแดงคือทิศที่ผู้เล่นคลิก ถ้าคลิกผิดจะนับเป็น Wrong
+        เส้นสีเขียวคือทิศเสียงจริง เส้นสีแดงคือทิศที่ผู้เล่นคลิก ถ้าคลิกผิดเกิน threshold จะนับเป็น Wrong
         ส่วน Timeout คือไม่ได้คลิกภายในเวลาที่กำหนด
       </p>
       <button className={btnPrimary} onClick={onRestart}>
-        ทดสอบอีกครั้ง
+        REMATCH ↻
       </button>
     </div>
   );
@@ -359,6 +437,13 @@ export default function AuditoryLocalizationGame({
       >
         <div className="pointer-events-none absolute inset-0 bg-noise opacity-25" />
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(139,233,253,0.13),transparent_32%),linear-gradient(rgba(139,233,253,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(139,233,253,0.05)_1px,transparent_1px)] bg-[size:100%_100%,48px_48px,48px_48px]" />
+
+        {/* Corner brackets */}
+        <div className="pointer-events-none absolute left-3 top-3 h-8 w-8 rounded-tl-lg border-l-2 border-t-2 border-accent/60" />
+        <div className="pointer-events-none absolute right-3 top-3 h-8 w-8 rounded-tr-lg border-r-2 border-t-2 border-accent/60" />
+        <div className="pointer-events-none absolute bottom-3 left-3 h-8 w-8 rounded-bl-lg border-b-2 border-l-2 border-accent/60" />
+        <div className="pointer-events-none absolute bottom-3 right-3 h-8 w-8 rounded-br-lg border-b-2 border-r-2 border-accent/60" />
+
         <Radar
           reveal={game.showReveal}
           waitingForClick={game.waitingForClick}
@@ -367,7 +452,7 @@ export default function AuditoryLocalizationGame({
 
         {game.running && game.waitingForClick && (
           <div className="absolute left-1/2 top-8 z-20 -translate-x-1/2 rounded-full border border-primary/30 bg-primary/10 px-5 py-2 text-sm font-black uppercase tracking-[0.2em] text-primary shadow-glow-primary">
-            click direction
+            ● CLICK DIRECTION
           </div>
         )}
 
